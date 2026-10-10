@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LX-24 Shift Remarks Dictation</title>
+<style>
+:root{font-family:Arial,"Segoe UI",sans-serif;color:#202b38;background:#f3f6f9}*{box-sizing:border-box}body{margin:0;padding:18px}.card{max-width:520px;margin:0 auto;background:#fff;border:1px solid #d3dce5;border-radius:10px;padding:20px;box-shadow:0 4px 18px #19325018}h1{font-size:20px;color:#183153;margin:0 0 6px}.hint{font-size:13px;color:#607184;margin:0 0 16px}.status{min-height:36px;margin:12px 0;color:#607184;font-size:13px}.status.error{color:#923030}.status.ok{color:#216b45}textarea{width:100%;min-height:180px;padding:12px;border:1px solid #bdcbd8;border-radius:6px;font:16px/1.5 Arial,"Segoe UI",sans-serif;resize:vertical}.actions{display:flex;gap:9px;margin-top:12px}.btn{flex:1;min-height:46px;border:0;border-radius:6px;background:#1769aa;color:#fff;font-size:15px;font-weight:700;cursor:pointer}.btn.secondary{background:#e3ebf3;color:#183153}.btn:disabled{opacity:.55;cursor:not-allowed}.small{font-size:11px;color:#607184;margin-top:12px}@media(max-width:420px){body{padding:8px}.card{padding:14px}.actions{flex-direction:column}.btn{min-height:48px}}
+</style>
+</head>
+<body>
+<main class="card">
+<h1>Shift <span id="shiftLabel">—</span> remarks</h1>
+<p class="hint">Tap Start listening and speak. Review the text, then send it back to the production report.</p>
+<textarea id="transcript" placeholder="Your spoken remarks will appear here…" aria-label="Recognized remarks"></textarea>
+<div id="status" class="status" role="status" aria-live="polite">Ready when you are.</div>
+<div class="actions"><button id="start" class="btn" type="button">🎙 Start listening</button><button id="stop" class="btn secondary" type="button" disabled>Stop</button><button id="send" class="btn" type="button">Send to report</button></div>
+<p class="small">The browser handles microphone permission. Speech recognition availability depends on the browser and its language settings.</p>
+</main>
+<script>
+(() => {
+  const params=new URLSearchParams(location.search),token=params.get('token'),shift=params.get('shift'),status=document.getElementById('status'),transcript=document.getElementById('transcript'),startButton=document.getElementById('start'),stopButton=document.getElementById('stop'),sendButton=document.getElementById('send');
+  const SpeechApi=window.SpeechRecognition||window.webkitSpeechRecognition;let recognition=null,finalText='';
+  document.getElementById('shiftLabel').textContent=['A','B','C'].includes(shift)?shift:'?';
+  function setStatus(text,type){status.textContent=text;status.className='status'+(type?' '+type:'');}
+  function setListening(value){startButton.disabled=value;stopButton.disabled=!value;}
+  async function begin(){
+    if(!token||!['A','B','C'].includes(shift)||!window.opener){setStatus('This dictation window was not opened from the report. Close it and tap the report microphone again.','error');startButton.disabled=true;return;}
+    if(!SpeechApi){setStatus('Speech recognition is not supported in this browser. Try the latest Chrome desktop browser.','error');return;}
+    startButton.disabled=true;setStatus('Requesting microphone access…');let stream;
+    try{
+      stream=await navigator.mediaDevices.getUserMedia({audio:true});stream.getTracks().forEach(track=>track.stop());
+      recognition=new SpeechApi();recognition.lang=navigator.language||'en-IN';recognition.continuous=true;recognition.interimResults=true;
+      recognition.onresult=event=>{let interim='';for(let i=event.resultIndex;i<event.results.length;i++){const phrase=event.results[i][0].transcript;if(event.results[i].isFinal)finalText+=(finalText?' ':'')+phrase.trim();else interim+=(interim?' ':'')+phrase;}transcript.value=[finalText,interim].filter(Boolean).join(' ');};
+      recognition.onerror=event=>{setStatus(event.error==='not-allowed'?'Microphone or speech recognition permission was blocked. Allow it for the GitHub Pages helper and try again.':'Speech recognition error: '+event.error,'error');setListening(false);};
+      recognition.onend=()=>{setListening(false);if(!status.classList.contains('error'))setStatus('Listening stopped. Review your text, then send it to the report.','ok');};
+      recognition.start();setListening(true);setStatus('Listening… Speak clearly, then tap Stop.','ok');
+    }catch(error){if(stream)stream.getTracks().forEach(track=>track.stop());startButton.disabled=false;setStatus(error&&['NotAllowedError','PermissionDeniedError','SecurityError'].includes(error.name)?'Microphone permission was denied. Allow it for the GitHub Pages helper in Chrome, then try again.':'Could not open the microphone. Check the connected microphone and browser settings.','error');}
+  }
+  function stop(){if(recognition){try{recognition.stop();}catch(e){}}}
+  function send(){const text=transcript.value.trim();if(!text){setStatus('Speak or enter remarks before sending.','error');return;}if(!window.opener||window.opener.closed){setStatus('The report page is no longer open. Keep it open and try again.','error');return;}window.opener.postMessage({type:'lx24-speech-result',token,shift,text},'*');setStatus('Remarks sent back to the report. You can close this window.','ok');sendButton.disabled=true;stop();}
+  startButton.addEventListener('click',begin);stopButton.addEventListener('click',stop);sendButton.addEventListener('click',send);
+})();
+</script>
+</body>
+</html>
